@@ -1,0 +1,199 @@
+{
+    "name": "KARDS_PIPELINE_V2",
+    "objectId": "60c4cc10-2f98-448b-9bcf-b5d777e0a6b4",
+    "properties": {
+        "activities": [
+            {
+                "name": "Table_list",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "source": {
+                        "type": "SqlServerSource",
+                        "sqlReaderQuery": "   SELECT TABLE_NAME\n   FROM INFORMATION_SCHEMA.TABLES\n   WHERE TABLE_SCHEMA = 'kards' AND TABLE_TYPE = 'BASE TABLE'",
+                        "queryTimeout": "02:00:00",
+                        "partitionOption": "None"
+                    },
+                    "firstRowOnly": false,
+                    "datasetSettings": {
+                        "annotations": [],
+                        "type": "SqlServerTable",
+                        "schema": [],
+                        "typeProperties": {
+                            "database": "KardsWarehouse"
+                        },
+                        "externalReferences": {
+                            "connection": "e5e2ba2f-058a-4af1-990b-758b7e562375"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "Looper",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Table_list",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Table_list').output.value",
+                        "type": "Expression"
+                    },
+                    "activities": [
+                        {
+                            "name": "Data load",
+                            "type": "Copy",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "typeProperties": {
+                                "source": {
+                                    "type": "SqlServerSource",
+                                    "queryTimeout": "02:00:00",
+                                    "partitionOption": "None",
+                                    "datasetSettings": {
+                                        "annotations": [],
+                                        "type": "SqlServerTable",
+                                        "schema": [],
+                                        "typeProperties": {
+                                            "schema": "kards",
+                                            "table": {
+                                                "value": "@item().TABLE_NAME",
+                                                "type": "Expression"
+                                            },
+                                            "database": "KardsWarehouse"
+                                        },
+                                        "externalReferences": {
+                                            "connection": "e5e2ba2f-058a-4af1-990b-758b7e562375"
+                                        }
+                                    }
+                                },
+                                "sink": {
+                                    "type": "ParquetSink",
+                                    "storeSettings": {
+                                        "type": "AzureBlobStorageWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "ParquetWriteSettings",
+                                        "enableVertiParquet": true
+                                    },
+                                    "datasetSettings": {
+                                        "annotations": [],
+                                        "connectionSettings": {
+                                            "name": "KardsLakehouse_V2",
+                                            "properties": {
+                                                "annotations": [],
+                                                "type": "Lakehouse",
+                                                "typeProperties": {
+                                                    "workspaceId": "0b24f6ea-755a-41e0-bc86-21910354e91f",
+                                                    "artifactId": "e8df7562-0abb-47e8-876a-0d20995eb1f9",
+                                                    "rootFolder": "Files"
+                                                },
+                                                "externalReferences": {
+                                                    "connection": "9d5110d8-2a20-42e8-83ab-8d4a85cd191d"
+                                                }
+                                            }
+                                        },
+                                        "type": "Parquet",
+                                        "typeProperties": {
+                                            "location": {
+                                                "type": "LakehouseLocation",
+                                                "fileName": {
+                                                    "value": "@concat(item().TABLE_NAME,'.parquet')",
+                                                    "type": "Expression"
+                                                },
+                                                "folderPath": "source_data"
+                                            },
+                                            "compressionCodec": "snappy"
+                                        },
+                                        "schema": []
+                                    }
+                                },
+                                "enableStaging": false,
+                                "translator": {
+                                    "type": "TabularTranslator",
+                                    "typeConversion": true,
+                                    "typeConversionSettings": {
+                                        "allowDataTruncation": true,
+                                        "treatBooleanAsNumber": false
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "Silver layer",
+                "type": "RefreshDataflow",
+                "dependsOn": [
+                    {
+                        "activity": "Looper",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "dataflowId": "eef42953-2d62-4cdb-aef4-30e6e52650c9",
+                    "workspaceId": "0b24f6ea-755a-41e0-bc86-21910354e91f",
+                    "notifyOption": "NoNotification",
+                    "dataflowType": "DataflowFabric",
+                    "executeMashupQueriesOnly": true
+                }
+            },
+            {
+                "name": "Gold Layer",
+                "type": "RefreshDataflow",
+                "dependsOn": [
+                    {
+                        "activity": "Silver layer",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "dataflowId": "11a3f5ae-8efe-454a-a5b5-80aec607ca63",
+                    "workspaceId": "0b24f6ea-755a-41e0-bc86-21910354e91f",
+                    "notifyOption": "NoNotification",
+                    "dataflowType": "DataflowFabric",
+                    "executeMashupQueriesOnly": true
+                }
+            }
+        ],
+        "lastModifiedByObjectId": "f92446c3-b711-4ab3-9917-6dec2cf18f87",
+        "lastPublishTime": "2026-08-20T14:03:17Z"
+    }
+}
